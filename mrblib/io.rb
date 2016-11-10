@@ -367,7 +367,6 @@ class IO
   end
 
   alias_method :to_i, :fileno
-  alias_method :tty?, :isatty
 end
 
 STDIN  = IO.open(0, "r")
