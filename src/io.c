@@ -54,7 +54,6 @@ static void fptr_finalize(mrb_state *mrb, struct mrb_io *fptr, int noraise);
 static struct RClass *
 mrb_module_get(mrb_state *mrb, const char *name)
 {
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   return mrb_class_get(mrb, name);
 }
 #endif
@@ -64,7 +63,6 @@ mrb_io_modestr_to_flags(mrb_state *mrb, const char *mode)
 {
   int flags = 0;
   const char *m = mode;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   switch (*m++) {
     case 'r':
@@ -102,7 +100,6 @@ static int
 mrb_io_flags_to_modenum(mrb_state *mrb, int flags)
 {
   int modenum = 0;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   switch(flags & (FMODE_READABLE|FMODE_WRITABLE|FMODE_READWRITE)) {
     case FMODE_READABLE:
@@ -139,7 +136,6 @@ mrb_fd_cloexec(mrb_state *mrb, int fd)
 {
 #if defined(F_GETFD) && defined(F_SETFD) && defined(FD_CLOEXEC)
   int flags, flags2;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   flags = fcntl(fd, F_GETFD);
   if (flags == -1) {
@@ -164,7 +160,6 @@ static int
 mrb_cloexec_pipe(mrb_state *mrb, int fildes[2])
 {
   int ret;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   ret = pipe(fildes);
   if (ret == -1)
     return -1;
@@ -177,7 +172,6 @@ static int
 mrb_pipe(mrb_state *mrb, int pipes[2])
 {
   int ret;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   ret = mrb_cloexec_pipe(mrb, pipes);
   if (ret == -1) {
     if (errno == EMFILE || errno == ENFILE) {
@@ -192,7 +186,6 @@ static int
 mrb_proc_exec(const char *pname)
 {
   const char *s;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   s = pname;
 
   while (*s == ' ' || *s == '\t' || *s == '\n')
@@ -212,7 +205,6 @@ static void
 mrb_io_free(mrb_state *mrb, void *ptr)
 {
   struct mrb_io *io = (struct mrb_io *)ptr;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   if (io != NULL) {
     fptr_finalize(mrb, io, TRUE);
     mrb_free(mrb, io);
@@ -225,7 +217,6 @@ static struct mrb_io *
 mrb_io_alloc(mrb_state *mrb)
 {
   struct mrb_io *fptr;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   fptr = (struct mrb_io *)mrb_malloc(mrb, sizeof(struct mrb_io));
   fptr->fd = -1;
@@ -255,7 +246,6 @@ mrb_io_s_popen(mrb_state *mrb, mrb_value klass)
   int pw[2] = { -1, -1 };
   int doexec;
   int saved_errno;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   mrb_get_args(mrb, "S|SH", &cmd, &mode, &opt);
   io = mrb_obj_value(mrb_data_object_alloc(mrb, mrb_class_ptr(klass), NULL, &mrb_io_type));
@@ -372,7 +362,6 @@ mrb_io_initialize(mrb_state *mrb, mrb_value io)
   mrb_int fd;
   mrb_value mode, opt;
   int flags;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   mode = opt = mrb_nil_value();
 
@@ -409,12 +398,12 @@ static void
 fptr_finalize(mrb_state *mrb, struct mrb_io *fptr, int noraise)
 {
   int n = 0;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   if (fptr == NULL) {
     return;
   }
 
+#ifndef _USE_WINAPI /* POSIX */
   if (fptr->fd > 2) {
     n = close(fptr->fd);
     if (n == 0) {
@@ -440,6 +429,16 @@ printf("%s: %s\n", __FILE__, __FUNCTION__);
   if (!noraise && n != 0) {
     mrb_sys_fail(mrb, "fptr_finalize failed.");
   }
+#else
+  if (fptr->fd) {
+    if (CloseHandle((HANDLE)fptr->fd)) {
+      fptr->fd = INVALID_HANDLE_VALUE;
+    }
+    else if (!noraise) {
+      mrb_sys_fail(mrb, "CloseHandle failed.");
+    }
+  }
+#endif
 }
 
 mrb_value
@@ -448,7 +447,6 @@ mrb_io_s_for_fd(mrb_state *mrb, mrb_value klass)
   struct RClass *c = mrb_class_ptr(klass);
   enum mrb_vtype ttype = MRB_INSTANCE_TT(c);
   mrb_value obj;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   /* copied from mrb_instance_alloc() */
   if (ttype == 0) ttype = MRB_TT_OBJECT;
@@ -460,19 +458,27 @@ mrb_value
 mrb_io_s_sysclose(mrb_state *mrb, mrb_value klass)
 {
   mrb_int fd;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   mrb_get_args(mrb, "i", &fd);
+#ifndef _USE_WINAPI /* POSIX */
   if (close(fd) == -1) {
     mrb_sys_fail(mrb, "close");
   }
+#else
+  if (CloseHandle((HANDLE)fd) == 0) {
+    mrb_sys_fail(mrb, "CloseHandle");
+  }
+#endif
   return mrb_fixnum_value(0);
 }
 
 int
 mrb_cloexec_open(mrb_state *mrb, const char *pathname, mrb_int flags, mrb_int mode)
 {
+#ifndef _USE_WINAPI /* POSIX */
   int fd, retry = FALSE;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
+#else
+  int fd;
+#endif
 
 #ifdef O_CLOEXEC
   /* O_CLOEXEC is available since Linux 2.6.23.  Linux 2.6.18 silently ignore it. */
@@ -480,6 +486,7 @@ printf("%s: %s\n", __FILE__, __FUNCTION__);
 #elif defined O_NOINHERIT
   flags |= O_NOINHERIT;
 #endif
+#ifndef _USE_WINAPI /* POSIX */
 reopen:
   fd = open(pathname, flags, mode);
   if (fd == -1) {
@@ -498,6 +505,33 @@ reopen:
   if (fd <= 2) {
     mrb_fd_cloexec(mrb, fd);
   }
+#else
+{
+  DWORD dwam = 0;
+  DWORD dwsm = 0;
+  DWORD dwcd = OPEN_EXISTING;
+  DWORD dwfa = 0;
+  HANDLE hFile = NULL;
+
+  switch(flags & (O_RDONLY|O_WRONLY|O_RDWR)) {
+  case O_RDONLY:  dwam = GENERIC_READ;                break;
+  case O_WRONLY:  dwam = GENERIC_WRITE;               break;
+  case O_RDWR:    dwam = GENERIC_READ|GENERIC_WRITE;  break; 
+  }
+
+  if (flags & O_CREAT)  dwcd |= OPEN_ALWAYS;
+  if (flags & O_EXCL)   dwcd |= CREATE_NEW;
+  if (flags & O_TRUNC)  dwcd |= TRUNCATE_EXISTING;
+
+  hFile = CreateFile((LPCTSTR)pathname, dwam, dwsm,
+                      (LPSECURITY_ATTRIBUTES)NULL, dwcd, dwfa, NULL);
+  if (hFile == INVALID_HANDLE_VALUE) {
+    // printf("error=%d\n", GetLastError());
+    mrb_sys_fail(mrb, "CreateFile");
+  }
+  fd = (int)hFile;
+}
+#endif
   return fd;
 }
 
@@ -509,7 +543,6 @@ mrb_io_s_sysopen(mrb_state *mrb, mrb_value klass)
   mrb_int fd, flags, perm = -1;
   const char *pat;
   int modenum;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   mrb_get_args(mrb, "S|Si", &path, &mode, &perm);
   if (mrb_nil_p(mode)) {
@@ -537,7 +570,6 @@ mrb_io_sysread(mrb_state *mrb, mrb_value io)
 #else
   DWORD ret;
 #endif
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   mrb_get_args(mrb, "i|S", &maxlen, &buf);
   if (maxlen < 0) {
@@ -555,8 +587,8 @@ printf("%s: %s\n", __FILE__, __FUNCTION__);
 #ifndef _USE_WINAPI /* POSIX */
   ret = read(fptr->fd, RSTRING_PTR(buf), maxlen);
 #else /* WinAPI */
-printf("%s buflen=%d\n", __FUNCTION__, maxlen);
   if (!ReadFile((HANDLE)fptr->fd, RSTRING_PTR(buf), maxlen, &ret, NULL)) {
+    // printf("error=%d\n", GetLastError());
     mrb_sys_fail(mrb, "sysread failed");
   }
 #endif
@@ -589,7 +621,6 @@ mrb_io_sysseek(mrb_state *mrb, mrb_value io)
   struct mrb_io *fptr;
   off_t pos;
   mrb_int offset, whence = -1;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   mrb_get_args(mrb, "i|i", &offset, &whence);
   if (whence < 0) {
@@ -597,10 +628,26 @@ printf("%s: %s\n", __FILE__, __FUNCTION__);
   }
 
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
+#ifndef _USE_WINAPI /* PODIX */
   pos = lseek(fptr->fd, offset, whence);
   if (pos == -1) {
     mrb_sys_fail(mrb, "sysseek");
   }
+#else
+{
+  DWORD dwmm = 0;
+  DWORD dwPos = 0;
+  dwmm  = (whence == SEEK_SET) ? FILE_BEGIN
+        : (whence == SEEK_CUR) ? FILE_CURRENT
+        : (whence == SEEK_END) ? FILE_END
+        : 0;
+  dwPos = SetFilePointer((HANDLE)fptr->fd, (LONG)offset, NULL, dwmm);
+  if (dwPos == INVALID_SET_FILE_POINTER) {
+    mrb_sys_fail(mrb, "SetFilePointer failed");
+  }
+  pos = (off_t)dwPos;
+}
+#endif
   if (pos > MRB_INT_MAX) {
     return mrb_float_value(mrb, (mrb_float)pos);
   } else {
@@ -619,7 +666,6 @@ mrb_io_syswrite(mrb_state *mrb, mrb_value io)
   int fd;
   DWORD length;
 #endif
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
   if (! fptr->writable) {
@@ -651,7 +697,6 @@ mrb_value
 mrb_io_close(mrb_state *mrb, mrb_value io)
 {
   struct mrb_io *fptr;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
   if (fptr && fptr->fd < 0) {
     mrb_raise(mrb, E_IO_ERROR, "closed stream.");
@@ -664,7 +709,6 @@ mrb_value
 mrb_io_closed(mrb_state *mrb, mrb_value io)
 {
   struct mrb_io *fptr;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
   if (fptr->fd >= 0) {
     return mrb_false_value();
@@ -677,7 +721,6 @@ mrb_value
 mrb_io_pid(mrb_state *mrb, mrb_value io)
 {
   struct mrb_io *fptr;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
 
   if (fptr->pid > 0) {
@@ -691,7 +734,6 @@ static struct timeval
 time2timeval(mrb_state *mrb, mrb_value time)
 {
   struct timeval t = { 0, 0 };
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   switch (mrb_type(time)) {
     case MRB_TT_FIXNUM:
@@ -715,7 +757,6 @@ static int
 mrb_io_read_data_pending(mrb_state *mrb, mrb_value io)
 {
   mrb_value buf = mrb_iv_get(mrb, io, mrb_intern_cstr(mrb, "@buf"));
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   if (mrb_type(buf) == MRB_TT_STRING && RSTRING_LEN(buf) > 0) {
     return 1;
   }
@@ -731,7 +772,6 @@ mrb_io_s_pipe(mrb_state *mrb, mrb_value klass)
   struct mrb_io *fptr_r;
   struct mrb_io *fptr_w;
   int pipes[2];
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   if (mrb_pipe(mrb, pipes) == -1) {
     mrb_sys_fail(mrb, "pipe");
@@ -775,7 +815,6 @@ mrb_io_s_select(mrb_state *mrb, mrb_value klass)
   int max = 0;
   int interrupt_flag = 0;
   int i, n;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   mrb_get_args(mrb, "*", &argv, &argc);
 
@@ -928,7 +967,6 @@ mrb_value
 mrb_io_fileno(mrb_state *mrb, mrb_value io)
 {
   struct mrb_io *fptr;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
   return mrb_fixnum_value(fptr->fd);
 }
@@ -939,7 +977,6 @@ mrb_io_close_on_exec_p(mrb_state *mrb, mrb_value io)
 #if defined(F_GETFD) && defined(F_SETFD) && defined(FD_CLOEXEC)
   struct mrb_io *fptr;
   int ret;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
   if (fptr->fd < 0) {
@@ -968,7 +1005,6 @@ mrb_io_set_close_on_exec(mrb_state *mrb, mrb_value io)
   struct mrb_io *fptr;
   int flag, ret;
   mrb_bool b;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, io, &mrb_io_type);
   if (fptr->fd < 0) {
@@ -1007,7 +1043,6 @@ mrb_io_set_sync(mrb_state *mrb, mrb_value self)
 {
   struct mrb_io *fptr;
   mrb_bool b;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, self, &mrb_io_type);
   if (fptr->fd < 0) {
@@ -1023,7 +1058,6 @@ mrb_value
 mrb_io_sync(mrb_state *mrb, mrb_value self)
 {
   struct mrb_io *fptr;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   fptr = (struct mrb_io *)mrb_get_datatype(mrb, self, &mrb_io_type);
   if (fptr->fd < 0) {
@@ -1036,7 +1070,6 @@ void
 mrb_init_io(mrb_state *mrb)
 {
   struct RClass *io;
-printf("%s: %s\n", __FILE__, __FUNCTION__);
 
   io      = mrb_define_class(mrb, "IO", mrb->object_class);
   MRB_SET_INSTANCE_TT(io, MRB_TT_DATA);
