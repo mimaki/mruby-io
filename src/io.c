@@ -20,7 +20,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#define _USE_WINAPI   /* Use Windows API */
+// #define _USE_WINAPI   /* Use Windows API */
 
 #if defined(_WIN32) || defined(_WIN64)
   #include <winsock.h>
